@@ -672,6 +672,7 @@ message PowerParameter {
 message PythonParameter {
   optional string module = 1;
   optional string layer = 2;
+  optional string param_str = 3 [default = ''];
 }
 
 message ReLUParameter {

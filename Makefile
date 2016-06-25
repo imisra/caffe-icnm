@@ -6,6 +6,13 @@ ifeq ($(wildcard $(CONFIG_FILE)),)
 $(error $(CONFIG_FILE) not found. See $(CONFIG_FILE).example.)
 endif
 include $(CONFIG_FILE)
+$(info Hostname is: $(HOSTNAME))
+$(info Build Dir is: $(BUILD_DIR))
+$(info Matlab Dir is: $(MATLAB_DIR))
+
+$(info CUDA Dir is: $(CUDA_DIR))
+$(info BLAS is: $(BLAS))
+$(info CPU_ONLY is: $(CPU_ONLY))
 
 BUILD_DIR_LINK := $(BUILD_DIR)
 ifeq ($(RELEASE_BUILD_DIR),)
@@ -169,7 +176,88 @@ ifneq ($(CPU_ONLY), 1)
 	LIBRARY_DIRS += $(CUDA_LIB_DIR)
 	LIBRARIES := cudart cublas curand
 endif
-LIBRARIES += glog gflags protobuf leveldb snappy \
+ifeq ($(HOSTNAME), compute-0-5)
+	# INCLUDE_DIRS += ./src ./include $(CUDA_INCLUDE_DIR) \
+	# 				/usr/include/leveldb/ \
+	# 				/usr/include \
+	# 				/home/ashrivas/cv-libs/opencv/include \
+	# 				/home/ashrivas/cv-libs/include
+	# LIBRARY_DIRS += $(CUDA_LIB_DIR) \
+	# 				/usr/lib /usr/lib64 \
+	# 				/home/ashrivas/cv-libs/opencv/lib \
+	# 				/home/ashrivas/cv-libs/lib \
+	# 				/opt/glog/lib
+	LIBRARIES := cudart cublas curand \
+				pthread \
+				glog protobuf leveldb snappy gflags\
+				lmdb \
+				boost_system \
+                boost_thread \
+				hdf5_hl hdf5 \
+				opencv_core opencv_highgui opencv_imgproc \
+				z
+else
+	ifeq ($(HOSTNAME), yoda)
+		LIBRARIES := cudart cublas curand \
+					pthread \
+					glog protobuf leveldb snappy gflags\
+					lmdb \
+					boost_system \
+					hdf5_hl hdf5 \
+					opencv_core opencv_highgui opencv_imgproc \
+					z
+	else
+		ifeq ($(HOSTNAME),warp)
+			LIBRARIES := cudart cublas curand \
+						pthread \
+						glog protobuf leveldb snappy gflags\
+						lmdb \
+						boost_system \
+						hdf5_hl hdf5 \
+						opencv_core opencv_highgui opencv_imgproc \
+						z
+		else
+			# INCLUDE_DIRS += ./src ./include $(CUDA_INCLUDE_DIR) \
+			# 				/nfs/hn47/ashrivas/cv-libs/leveldb-1.15.0/include \
+			# 				/usr/include
+			# LIBRARY_DIRS += $(CUDA_LIB_DIR) \
+			# 				/nfs/hn47/ashrivas/cv-libs/leveldb-1.15.0 \
+			# 				/nfs/hn47/ashrivas/cv-libs/snappy-1.1.1
+			LIBRARIES := cudart cublas curand \
+						pthread \
+						glog jpeg protobuf leveldb snappy gflags\
+						lmdb \
+						boost_system \
+                        boost_thread \
+						hdf5_hl hdf5 \
+						opencv_core opencv_highgui opencv_imgproc \
+						z
+		endif
+	endif
+endif
+ifeq ($(HOSTNAME), compute-1-5)
+	# INCLUDE_DIRS += ./src ./include $(CUDA_INCLUDE_DIR) \
+	# 				/usr/include/leveldb/ \
+	# 				/usr/include \
+	# 				/home/ashrivas/cv-libs/opencv/include \
+	# 				/home/ashrivas/cv-libs/include
+	# LIBRARY_DIRS += $(CUDA_LIB_DIR) \
+	# 				/usr/lib /usr/lib64 \
+	# 				/home/ashrivas/cv-libs/opencv/lib \
+	# 				/home/ashrivas/cv-libs/lib \
+	# 				/opt/glog/lib
+	LIBRARIES := cudart cublas curand \
+				pthread \
+				glog protobuf leveldb snappy gflags\
+				lmdb \
+				boost_system \
+				boost_thread \
+				hdf5_hl hdf5 \
+				opencv_core opencv_highgui opencv_imgproc \
+				z
+endif
+
+#LIBRARIES += glog gflags protobuf leveldb snappy \
 	lmdb boost_system hdf5_hl hdf5 m \
 	opencv_core opencv_highgui opencv_imgproc
 PYTHON_LIBRARIES := boost_python python2.7
@@ -228,7 +316,7 @@ ifeq ($(LINUX), 1)
 	CXX ?= /usr/bin/g++
 	GCCVERSION := $(shell $(CXX) -dumpversion | cut -f1,2 -d.)
 	# older versions of gcc are too dumb to build boost with -Wuninitalized
-	ifeq ($(shell echo $(GCCVERSION) \< 4.6 | bc), 1)
+	ifeq ($(shell echo | awk '{exit $(GCCVERSION) < 4.6;}'), 1)
 		WARNINGS += -Wno-uninitialized
 	endif
 	# boost::thread is reasonably called boost_thread (compare OS X)
@@ -243,7 +331,7 @@ ifeq ($(OSX), 1)
 	CXX := /usr/bin/clang++
 	ifneq ($(CPU_ONLY), 1)
 		CUDA_VERSION := $(shell $(CUDA_DIR)/bin/nvcc -V | grep -o 'release \d' | grep -o '\d')
-		ifeq ($(shell echo $(CUDA_VERSION) \< 7.0 | bc), 1)
+		ifeq ($(shell echo | awk '{exit $(CUDA_VERSION) < 7.0;}'), 1)
 			CXXFLAGS += -stdlib=libstdc++
 			LINKFLAGS += -stdlib=libstdc++
 		endif
@@ -386,11 +474,13 @@ endif
 ##############################
 # Define build targets
 ##############################
-.PHONY: all test clean docs linecount lint lintclean tools examples $(DIST_ALIASES) \
+.PHONY: all lib test clean docs linecount lint lintclean tools examples $(DIST_ALIASES) \
 	py mat py$(PROJECT) mat$(PROJECT) proto runtest \
 	superclean supercleanlist supercleanfiles warn everything
 
-all: $(STATIC_NAME) $(DYNAMIC_NAME) tools examples
+all: lib tools examples
+
+lib: $(STATIC_NAME) $(DYNAMIC_NAME)
 
 everything: $(EVERYTHING_TARGETS)
 
@@ -439,11 +529,11 @@ py$(PROJECT): py
 
 py: $(PY$(PROJECT)_SO) $(PROTO_GEN_PY)
 
-$(PY$(PROJECT)_SO): $(PY$(PROJECT)_SRC) $(PY$(PROJECT)_HXX) $(DYNAMIC_NAME)
+$(PY$(PROJECT)_SO): $(PY$(PROJECT)_SRC) $(PY$(PROJECT)_HXX) | $(DYNAMIC_NAME)
 	@ echo CXX/LD -o $@ $<
 	$(Q)$(CXX) -shared -o $@ $(PY$(PROJECT)_SRC) \
 		-o $@ $(LINKFLAGS) -l$(PROJECT) $(PYTHON_LDFLAGS) \
-		-Wl,-rpath,$(ORIGIN)/../../$(BUILD_DIR)/lib
+		-Wl,-rpath,$(ORIGIN)/../../build/lib
 
 mat$(PROJECT): mat
 
