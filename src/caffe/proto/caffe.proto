@@ -871,6 +871,9 @@ message MILDataParameter {
   
   // To randomize or not
   optional bool randomize = 13 [default = true];
+  
+  //how to use the ids file to get label from hdf5 file
+  optional bool use_im_basename_for_hdf5 = 14 [default = false];
 }
 
 

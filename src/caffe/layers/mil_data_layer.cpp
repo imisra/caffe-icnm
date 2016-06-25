@@ -33,6 +33,7 @@ void MILDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
   
   LOG(INFO) << "Loading labels from: "<< label_file;
   label_file_id_ = H5Fopen(label_file.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT); 
+  CHECK_GE(label_file_id_, 0)<<"hdf5 label file not found: "<<label_file;
 
   LOG(INFO) << "MIL Data layer:" << std::endl;
   std::ifstream infile(this->layer_param_.mil_data_param().source().c_str());
@@ -111,6 +112,20 @@ unsigned int MILDataLayer<Dtype>::PrefetchRand() {
   return (*prefetch_rng)();
 }
 
+std::vector<std::string> &split(const std::string &s, char delim, std::vector<std::string> &elems) {
+    std::stringstream ss(s);
+    std::string item;
+    while (std::getline(ss, item, delim)) {
+        elems.push_back(item);
+    }
+    return elems;
+}
+std::vector<std::string> split(const std::string &s, char delim) {
+    std::vector<std::string> elems;
+    split(s, delim, elems);
+    return elems;
+}
+
 // Thread fetching the data
 template <typename Dtype>
 void MILDataLayer<Dtype>::InternalThreadEntry() {
@@ -125,6 +140,7 @@ void MILDataLayer<Dtype>::InternalThreadEntry() {
   const int n_classes = this->layer_param_.mil_data_param().n_classes();
   const int num_scales = this->layer_param_.mil_data_param().num_scales();
   const float scale_factor = this->layer_param_.mil_data_param().scale_factor();
+  const bool use_im_basename_for_hdf5 = this->layer_param_.mil_data_param().use_im_basename_for_hdf5();
 
   // zero out batch
   caffe_set(this->prefetch_data_.count(), Dtype(0), top_data);
@@ -143,12 +159,20 @@ void MILDataLayer<Dtype>::InternalThreadEntry() {
     
     cv::Mat cv_img = cv::imread(full_im_name, CV_LOAD_IMAGE_COLOR);
     if (!cv_img.data) {
-      LOG(ERROR) << "Could not open or find file " << full_im_name;
+      LOG(INFO) << "Could not open or find file " << full_im_name;
       return;
     }
     
-    // hdf5_load_nd_dataset(this->label_file_id_, string("/label-"+im_name).c_str(), 2, 2, label_blob_);
-    hdf5_load_nd_dataset(this->label_file_id_, string("/labels-"+im_name).c_str(), 4, 4, &this->label_blob_);
+
+    if (use_im_basename_for_hdf5 == true) {
+      std::vector<std::string> elems = split(im_name, '/');
+      std::string &basename = elems.back();
+      // LOG(INFO)<<basename;
+      hdf5_load_nd_dataset(this->label_file_id_, string("/labels-"+basename).c_str(), 4, 4, &this->label_blob_);
+    } else {
+      hdf5_load_nd_dataset(this->label_file_id_, string("/labels-"+im_name).c_str(), 4, 4, &this->label_blob_);
+    }   
+    // hdf5_load_nd_dataset(this->label_file_id_, string("/labels-"+im_name).c_str(), 4, 4, &this->label_blob_);
     const Dtype* label = label_blob_.mutable_cpu_data();
     // LOG(INFO) << "[width, height, channels, num] = " << label_blob_.width() << 
     //   ", " << label_blob_.height() << ", " << label_blob_.channels() << ", " << label_blob_.num();
